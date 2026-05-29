@@ -1,218 +1,1013 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+import pygame
+import sys
+import random
+import os  # Thư viện os giúp đóng tiến trình sạch, fix lỗi Thonny back-end
 
-# C extensions
-*.so
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# Khởi tạo pygame và mixer
+pygame.init()
+pygame.mixer.init()
 
-# PyInstaller
-#   Usually these files are written by a python script from a template
-#   before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+# Cấu hình màn hình
+WIDTH, HEIGHT = 1266, 611
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Mini Contra - Camera Scrolling & Boss Update")
+clock = pygame.time.Clock()
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Định nghĩa màu sắc
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)          
+ENEMY_BULLET_COLOR = (255, 100, 100)
+BLUE = (0, 0, 255)         
+YELLOW = (255, 255, 0)     
+ORANGE = (255, 165, 0)     
+DUST_COLOR = (200, 200, 200) 
+BOMB_COLOR = (50, 80, 50)    
+GRAY = (150, 150, 150)     
+GREEN = (0, 255, 0)        
+PURPLE = (148, 0, 211)     
+CYAN = (0, 255, 255)
+BROWN = (139, 69, 19)
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+# Cấu hình bản đồ cuộn (Scrolling Map)
+MAP_WIDTH = 5100  # Chiều dài toàn bản đồ
+camera_x = 0      # Tọa độ camera
 
-# Translations
-*.mo
-*.pot
+# ========================================================
+# HỆ THỐNG ÂM THANH (SOUND SYSTEM)
+# ========================================================
+if not os.path.exists('sound'):
+    os.makedirs('sound')
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+def load_sound(filename, volume=0.5):
+    path = os.path.join('sound', filename)
+    if os.path.exists(path):
+        try:
+            sound = pygame.mixer.Sound(path)
+            sound.set_volume(volume)
+            return sound
+        except Exception as e:
+            print(f"Loi tai file {filename}: {e}")
+            return None
+    else:
+        return None
 
-# Flask stuff:
-instance/
-.webassets-cache
+# Tải các hiệu ứng âm thanh (SFX)
+snd_shoot = load_sound('shoot.wav', 0.2)        
+snd_explosion = load_sound('explosion.wav', 0.4) 
+snd_bomb_drop = load_sound('bomb_drop.wav', 0.4) 
+snd_bomb_exp = load_sound('bomb_exp.wav', 0.5)   
+snd_jump = load_sound('jump.wav', 0.8)          
+snd_player_hit = load_sound('player_hit.wav', 0.5) 
+snd_game_over = load_sound('game_over.wav', 0.6) 
 
-# Scrapy stuff:
-.scrapy
+# Nhạc nền
+bgm_path = os.path.join('sound', 'bgm.mp3')
+if os.path.exists(bgm_path):
+    try:
+        pygame.mixer.music.load(bgm_path)
+        pygame.mixer.music.set_volume(0.7)
+        pygame.mixer.music.play(-1)
+    except:
+        pass
 
-# Sphinx documentation
-docs/_build/
+# Rung màn hình
+shake_duration = 0  
+shake_intensity = 0 
 
-# PyBuilder
-.pybuilder/
-target/
+def trigger_shake(duration, intensity):
+    global shake_duration, shake_intensity
+    shake_duration = duration
+    shake_intensity = intensity
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Font chữ
+pygame.font.init()
+GAME_FONT = pygame.font.SysFont("sans-serif", 25, bold=True)
+TITLE_FONT = pygame.font.SysFont("sans-serif", 80, bold=True)
+MENU_FONT = pygame.font.SysFont("sans-serif", 40, bold=True)
 
-# IPython
-profile_default/
-ipython_config.py
+current_difficulty = "NORMAL"
+max_enemies_on_screen = 5
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+# ========================================================
+# HỆ THỐNG ĐỒ HỌA NỀN BẢN ĐỒ LỚN (LARGE MAP BACKGROUND)
+# ========================================================
+def create_large_jungle_background():
+    bg = pygame.Surface((MAP_WIDTH, HEIGHT))
+    bg.fill((10, 15, 30)) 
+    
+    pygame.draw.circle(bg, (220, 225, 230), (700, 120), 25)
+    pygame.draw.circle(bg, (10, 15, 30), (712, 112), 23)
+    
+    for i in range(0, MAP_WIDTH, 120):
+        h = random.randint(180, 260)
+        pygame.draw.ellipse(bg, (15, 25, 25), (i - 20, HEIGHT - h, 200, h))
+    for i in range(0, MAP_WIDTH, 80):
+        h = random.randint(110, 150)
+        pygame.draw.ellipse(bg, (20, 40, 30), (i - 15, HEIGHT - h, 140, h))
+    return bg
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-# Pipfile.lock
+def create_large_ground_texture():
+    ground_surf = pygame.Surface((MAP_WIDTH, 40))
+    ground_surf.fill((105, 55, 40))
+    for x in range(0, MAP_WIDTH, 30):
+        for y in range(0, 40, 15):
+            pygame.draw.rect(ground_surf, (55, 25, 15), (x, y, 30, 15), 1)
+            if random.random() > 0.7:
+                pygame.draw.rect(ground_surf, (45, 95, 45), (x + 2, y + 2, 8, 3))
+    return ground_surf
 
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-# uv.lock
+large_background_image = create_large_jungle_background()
+large_ground_texture = create_large_ground_texture()
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-# poetry.lock
-# poetry.toml
+# ========================================================
+# HỆ THỐNG ANIMATION BẰNG CODE
+# ========================================================
+def create_character_frames(main_color, hat_color):
+    frames = {'idle': [], 'run': [], 'jump': []}
+    w, h = 40, 50
+    def get_surface(): return pygame.Surface((w, h), pygame.SRCALPHA)
+    SKIN, GUN, LEG_COLOR = (255, 204, 153), (150, 150, 150), BLACK
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-# pdm.lock
-# pdm.toml
-.pdm-python
-.pdm-build/
+    # IDLE
+    surf = get_surface()
+    pygame.draw.circle(surf, SKIN, (20, 12), 10)            
+    pygame.draw.rect(surf, hat_color, (10, 2, 20, 6))       
+    pygame.draw.rect(surf, BLACK, (22, 8, 4, 4))            
+    pygame.draw.rect(surf, main_color, (12, 22, 16, 18))    
+    pygame.draw.rect(surf, LEG_COLOR, (12, 40, 7, 10))      
+    pygame.draw.rect(surf, LEG_COLOR, (21, 40, 7, 10))      
+    pygame.draw.rect(surf, GUN, (20, 26, 18, 6))            
+    frames['idle'].append(surf)
 
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-# pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
+    # RUN
+    run_cycle = [(-4, 4), (0, 0), (4, -4), (0, 0)]
+    for lx, rx in run_cycle:
+        surf = get_surface()
+        bob = 2 if lx == 0 else 0  
+        pygame.draw.circle(surf, SKIN, (20, 12 + bob), 10)
+        pygame.draw.rect(surf, hat_color, (10, 2 + bob, 20, 6))
+        pygame.draw.rect(surf, BLACK, (22, 8 + bob, 4, 4))
+        pygame.draw.rect(surf, main_color, (12, 22 + bob, 16, 18))
+        pygame.draw.rect(surf, LEG_COLOR, (13 + lx, 40 + (bob if lx <= 0 else -2), 7, 10))
+        pygame.draw.rect(surf, LEG_COLOR, (20 + rx, 40 + (bob if rx <= 0 else -2), 7, 10))
+        pygame.draw.rect(surf, GUN, (20, 26 + bob, 18, 6))
+        frames['run'].append(surf)
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+    # JUMP
+    surf = get_surface()
+    pygame.draw.circle(surf, SKIN, (20, 12), 10)
+    pygame.draw.rect(surf, hat_color, (10, 2, 20, 6))
+    pygame.draw.rect(surf, BLACK, (22, 8, 4, 4))
+    pygame.draw.rect(surf, main_color, (12, 22, 16, 18))
+    pygame.draw.rect(surf, LEG_COLOR, (11, 37, 8, 8))       
+    pygame.draw.rect(surf, LEG_COLOR, (21, 37, 8, 8))       
+    pygame.draw.rect(surf, GUN, (20, 24, 18, 6))
+    frames['jump'].append(surf)
+    return frames
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+class DustParticle:
+    def __init__(self, x, y, vel_x):
+        self.x, self.y = x, y
+        self.vel_x = vel_x + random.uniform(-1.5, 1.5)
+        self.vel_y = random.uniform(-2.0, -0.5) 
+        self.radius = random.randint(3, 6)      
+        self.alpha = 200                        
+        self.fade_speed = random.randint(8, 15) 
+        self.is_dead = False
 
-# Redis
-*.rdb
-*.aof
-*.pid
+    def update(self):
+        self.x += self.vel_x
+        self.y += self.vel_y
+        self.alpha -= self.fade_speed
+        if self.alpha <= 0: self.is_dead = True
 
-# RabbitMQ
-mnesia/
-rabbitmq/
-rabbitmq-data/
+    def draw(self, surface, offset_x=0, offset_y=0):
+        if not self.is_dead:
+            dust_surf = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(dust_surf, (DUST_COLOR[0], DUST_COLOR[1], DUST_COLOR[2], self.alpha), (self.radius, self.radius), self.radius)
+            surface.blit(dust_surf, (int(self.x - self.radius) + offset_x, int(self.y - self.radius) + offset_y))
 
-# ActiveMQ
-activemq-data/
+class Explosion:
+    def __init__(self, x, y, is_bomb_explosion=False):
+        self.x, self.y = x, y
+        self.is_bomb_explosion = is_bomb_explosion
+        self.radius = 5 if not is_bomb_explosion else 15
+        self.max_radius = 20 if not is_bomb_explosion else 100
+        self.speed = 2 if not is_bomb_explosion else 6
+        self.is_dead = False
+        self.sparks = []
+        num_sparks = 8 if not is_bomb_explosion else 25
+        for _ in range(num_sparks):
+            self.sparks.append({
+                'x': float(x), 'y': float(y),
+                'vx': random.uniform(-4, 4) if not is_bomb_explosion else random.uniform(-10, 10),
+                'vy': random.uniform(-4, 4) if not is_bomb_explosion else random.uniform(-12, 4),
+                'color': random.choice([YELLOW, RED, ORANGE]),
+                'size': random.randint(2, 5) if not is_bomb_explosion else random.randint(3, 8)
+            })
 
-# SageMath parsed files
-*.sage.py
+    def update(self):
+        self.radius += self.speed
+        if self.radius >= self.max_radius: self.is_dead = True
+        for spark in self.sparks:
+            spark['x'] += spark['vx']
+            spark['y'] += spark['vy']
+            if self.is_bomb_explosion: spark['vy'] += 0.3  
 
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+    def draw(self, surface, offset_x=0, offset_y=0):
+        if self.is_dead: return
+        cx, cy = self.x + offset_x, self.y + offset_y
+        alpha = max(0, int(255 * (1 - (self.radius / self.max_radius))))
+        exp_surf = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
+        color = (255, 140, 0, alpha) if self.is_bomb_explosion else (255, 69, 0, alpha)
+        pygame.draw.circle(exp_surf, color, (self.radius, self.radius), self.radius)
+        surface.blit(exp_surf, (int(cx - self.radius), int(cy - self.radius)))
+        for spark in self.sparks:
+            pygame.draw.circle(surface, spark['color'], (int(spark['x']) + offset_x, int(spark['y']) + offset_y), spark['size'])
 
-# Spyder project settings
-.spyderproject
-.spyproject
+class Player:
+    def __init__(self):
+        self.rect = pygame.Rect(100, HEIGHT - 90, 40, 50)
+        self.speed = 6
+        self.jump_power = -11.5
+        self.velocity_y = 0
+        self.is_jumping = False
+        self.facing_right = True
+        self.frames = create_character_frames(BLUE, RED)
+        self.state = 'idle'
+        self.frame_index = 0
+        self.animation_speed = 0.2
+        
+        self.max_hp = 200
+        self.hp = 200
+        self.lives = 3  
+        self.score = 0  
+        self.invincible_time = 0 
+        self.bombs_left = 30 
+        
+        self.weapon = "NORMAL"  
+        self.last_m4a1_shot = 0  
 
-# Rope project settings
-.ropeproject
+    def move(self, keys, dust_list, boss_spawned):
+        moving = False
+        vel_x_dust = 0
+        
+        min_x = camera_x
+        max_x = MAP_WIDTH - 50
+        
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            if self.rect.left > min_x:
+                self.rect.x -= self.speed
+                self.facing_right = False
+                moving, vel_x_dust = True, 2.0  
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            if self.rect.right < max_x:
+                self.rect.x += self.speed
+                self.facing_right = True
+                moving, vel_x_dust = True, -2.0 
 
-# mkdocs documentation
-/site
+        if self.is_jumping: self.state = 'jump'
+        elif moving:
+            self.state = 'run'
+            if random.random() < 0.35: dust_list.append(DustParticle(self.rect.centerx, self.rect.bottom, vel_x_dust))
+        else: self.state = 'idle'
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+    def jump(self):
+        if not self.is_jumping:
+            self.velocity_y = self.jump_power
+            self.is_jumping = True
+            if snd_jump: snd_jump.play()
 
-# Pyre type checker
-.pyre/
+    def apply_gravity(self, dust_list):
+        self.velocity_y += 0.6
+        self.rect.y += int(self.velocity_y)
+        if self.rect.y >= HEIGHT - 90:
+            if self.is_jumping and self.velocity_y > 0:
+                for _ in range(6): dust_list.append(DustParticle(self.rect.centerx, HEIGHT - 40, random.uniform(-3, 3)))
+            self.rect.y = HEIGHT - 90
+            self.is_jumping = False
+            self.velocity_y = 0
 
-# pytype static type analyzer
-.pytype/
+    def take_damage(self, amount):
+        current_time = pygame.time.get_ticks()
+        if current_time > self.invincible_time:
+            self.hp -= amount
+            if snd_player_hit: snd_player_hit.play()
+            if self.hp < 0: self.hp = 0
+            self.invincible_time = current_time + 1000 
 
-# Cython debug symbols
-cython_debug/
+    def draw(self, surface, offset_x=0, offset_y=0):
+        current_time = pygame.time.get_ticks()
+        if current_time < self.invincible_time and (current_time // 100) % 2 == 0: return
+        if self.state == 'run': self.frame_index += self.animation_speed
+        else: self.frame_index = 0
 
-# PyCharm
-#   JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#   be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#   and can be added to the global gitignore or merged into this file.  For a more nuclear
-#   option (not recommended) you can uncomment the following to ignore the entire idea folder.
-# .idea/
+        frame_list = self.frames[self.state]
+        current_frame = frame_list[int(self.frame_index) % len(frame_list)]
+        if not self.facing_right: current_frame = pygame.transform.flip(current_frame, True, False)
+        surface.blit(current_frame, self.rect.move(offset_x, offset_y))
 
-# Abstra
-#   Abstra is an AI-powered process automation framework.
-#   Ignore directories containing user credentials, local state, and settings.
-#   Learn more at https://abstra.io/docs
-.abstra/
+class Bomb:
+    def __init__(self, x, y, facing_right):
+        self.x, self.y = float(x), float(y)
+        self.vel_x = 8.0 if facing_right else -8.0
+        self.vel_y, self.gravity, self.radius = -7.0, 0.4, 8
+        self.rect = pygame.Rect(x - self.radius, y - self.radius, self.radius * 2, self.radius * 2)
+        self.is_exploded = False
 
-# Visual Studio Code
-#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#   and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#   you could uncomment the following to ignore the entire vscode folder
-# .vscode/
-# Temporary file for partial code execution
-tempCodeRunnerFile.py
+    def update(self, dust_list):
+        if random.random() < 0.4: dust_list.append(DustParticle(int(self.x), int(self.y), -self.vel_x * 0.2))
+        self.vel_y += self.gravity
+        self.x += self.vel_x
+        self.y += self.vel_y
+        self.rect.x = int(self.x - self.radius)
+        self.rect.y = int(self.y - self.radius)
+        if self.y >= HEIGHT - 55: self.is_exploded = True
 
-# Ruff stuff:
-.ruff_cache/
+    def draw(self, surface, offset_x=0, offset_y=0):
+        bx, by = int(self.x) + offset_x, int(self.y) + offset_y
+        pygame.draw.circle(surface, BOMB_COLOR, (bx, by), self.radius)
+        pygame.draw.circle(surface, RED, (bx, by - self.radius + 2), 2)
+        pygame.draw.circle(surface, BLACK, (bx, by), self.radius, 1)
 
-# PyPI configuration file
-.pypirc
+class PlayerBullet:
+    def __init__(self, x, y, facing_right, angle_y=0, is_piercing=False):
+        self.rect = pygame.Rect(x, y, 14 if is_piercing else 12, 6)
+        self.speed_x = (15 if facing_right else -15)
+        if is_piercing: self.speed_x = (17 if facing_right else -17) 
+        self.speed_y = angle_y
+        self.is_piercing = is_piercing  
+        self.hit_enemies = []           
+        self.history = []
+        self.max_history = 4 
 
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+    def update(self):
+        self.history.insert(0, (self.rect.x, self.rect.y))
+        if len(self.history) > self.max_history: self.history.pop()
+        self.rect.x += self.speed_x
+        self.rect.y += self.speed_y
 
-# Streamlit
-.streamlit/secrets.toml
+    def draw(self, surface, offset_x=0, offset_y=0):
+        for i, pos in enumerate(self.history):
+            alpha = int(180 * (1 - (i / self.max_history)))
+            w = max(2, self.rect.width - (i * 2))
+            h = max(2, self.rect.height - (i * 1))
+            tracer_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            if self.is_piercing: color = (0, 255, 255, alpha)
+            else: color = (255, 165, 0, alpha) if i > 1 else (255, 255, 0, alpha)
+            pygame.draw.rect(tracer_surf, color, (0, 0, w, h))
+            surface.blit(tracer_surf, (pos[0] + offset_x, pos[1] + (self.rect.height - h)//2 + offset_y))
+
+        moved_rect = self.rect.move(offset_x, offset_y)
+        pygame.draw.rect(surface, WHITE if not self.is_piercing else CYAN, moved_rect) 
+        pygame.draw.rect(surface, YELLOW if not self.is_piercing else BLUE, moved_rect, 1) 
+
+class EnemyBullet:
+    def __init__(self, x, y, speed_x=-8, speed_y=0, is_sniper=False):
+        self.rect = pygame.Rect(x, y, 16 if is_sniper else 8, 4 if is_sniper else 8)    
+        self.speed_x = speed_x
+        self.speed_y = speed_y
+        self.damage = 20 if is_sniper else 6
+        self.color = ORANGE if is_sniper else ENEMY_BULLET_COLOR
+
+    def update(self):
+        self.rect.x += self.speed_x
+        self.rect.y += self.speed_y
+        
+    def draw(self, surface, offset_x=0, offset_y=0): 
+        pygame.draw.rect(surface, self.color, self.rect.move(offset_x, offset_y))
+
+# ========================================================
+# HỆ THỐNG KÈ ĐỊCH ĐA DẠNG
+# ========================================================
+class Enemy:
+    def __init__(self, x, y):
+        self.rect = pygame.Rect(x, y, 40, 50)
+        self.speed = random.uniform(-2.5, -1.5) 
+        self.shoot_cooldown = random.randint(1500, 3500)
+        self.last_shot_time = pygame.time.get_ticks() + random.randint(0, 1500)
+        self.frames = create_character_frames(RED, BLACK)
+        self.frame_index, self.animation_speed, self.facing_right = 0, 0.15, False 
+        self.max_hp, self.hp = 3, 3
+        self.type = "NORMAL"
+
+    def update(self, enemy_bullets_list, player_obj):
+        self.rect.x += self.speed
+        if self.rect.right < camera_x - 100:
+            self.rect.x = camera_x + WIDTH + random.randint(50, 300)
+            self.hp = self.max_hp
+        self.frame_index = (self.frame_index + self.animation_speed) % len(self.frames['run'])
+        
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_shot_time > self.shoot_cooldown:
+            if camera_x < self.rect.x < camera_x + WIDTH: 
+                enemy_bullets_list.append(EnemyBullet(self.rect.left, self.rect.y + 26, speed_x=-8))
+                if snd_shoot: snd_shoot.play()  
+            self.last_shot_time = current_time
+            self.shoot_cooldown = random.randint(2000, 4000)
+
+    def draw_hp_bar(self, surface, offset_x, offset_y):
+        if self.hp > 0:
+            bar_width, bar_height = 36, 5          
+            bx, by = self.rect.x + (self.rect.width - bar_width)//2 + offset_x, self.rect.y - 10 + offset_y
+            pygame.draw.rect(surface, RED, (bx, by, bar_width, bar_height))
+            pygame.draw.rect(surface, YELLOW, (bx, by, int((self.hp / self.max_hp) * bar_width), bar_height))
+            pygame.draw.rect(surface, BLACK, (bx, by, bar_width, bar_height), 1)
+
+    def draw(self, surface, offset_x=0, offset_y=0):
+        current_frame = self.frames['run'][int(self.frame_index)]
+        if not self.facing_right: current_frame = pygame.transform.flip(current_frame, True, False)
+        surface.blit(current_frame, self.rect.move(offset_x, offset_y))
+        self.draw_hp_bar(surface, offset_x, offset_y)
+
+class SniperEnemy(Enemy):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.speed = random.uniform(-1.5, -1.0)                          
+        self.shoot_cooldown = random.randint(3000, 5000) 
+        self.frames = create_character_frames(ORANGE, GRAY)
+        self.max_hp, self.hp = 4, 4
+        self.type = "SNIPER"
+
+    def update(self, enemy_bullets_list, player_obj):
+        self.rect.x += self.speed
+        if self.rect.right < camera_x - 100:
+            self.rect.x = camera_x + WIDTH + random.randint(100, 400)
+            self.hp = self.max_hp
+        self.frame_index = (self.frame_index + self.animation_speed) % len(self.frames['run'])
+        
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_shot_time > self.shoot_cooldown:
+            if camera_x < self.rect.x < camera_x + WIDTH:
+                enemy_bullets_list.append(EnemyBullet(self.rect.left, self.rect.y + 26, speed_x=-15, is_sniper=True))
+                if snd_shoot: snd_shoot.play()  
+            self.last_shot_time = current_time
+
+class SuicideBomber(Enemy):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.speed = -3.0  
+        self.max_hp, self.hp = 2, 2
+        self.frames = create_character_frames(YELLOW, RED)
+        self.type = "BOMBER"
+
+    def update(self, enemy_bullets_list, player_obj):
+        if self.rect.x < player_obj.rect.x:
+            self.speed = 3.0
+            self.facing_right = True
+        else:
+            self.speed = -3.0
+            self.facing_right = False
+        self.rect.x += self.speed
+        self.frame_index = (self.frame_index + 0.2) % len(self.frames['run'])
+
+    def draw(self, surface, offset_x=0, offset_y=0):
+        rx, ry = self.rect.x + offset_x, self.rect.y + offset_y
+        current_frame = self.frames['run'][int(self.frame_index)]
+        if not self.facing_right: current_frame = pygame.transform.flip(current_frame, True, False)
+        surface.blit(current_frame, (rx, ry))
+        
+        t = pygame.time.get_ticks() // 100
+        bomb_color = RED if t % 2 == 0 else ORANGE
+        pygame.draw.circle(surface, bomb_color, (rx + (15 if self.facing_right else 25), ry + 25), 6)
+        self.draw_hp_bar(surface, offset_x, offset_y)
+
+class ShieldSniper(Enemy):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.speed = 0  
+        self.max_hp, self.hp = 8, 8 
+        self.frames = create_character_frames(GRAY, BLACK)
+        self.type = "SHIELD"
+        self.shoot_cooldown = 2500
+        
+    def update(self, enemy_bullets_list, player_obj):
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_shot_time > self.shoot_cooldown:
+            if camera_x < self.rect.x < camera_x + WIDTH:
+                enemy_bullets_list.append(EnemyBullet(self.rect.left - 5, self.rect.y + 26, speed_x=-8))
+                if snd_shoot: snd_shoot.play()
+            self.last_shot_time = current_time
+
+    def draw(self, surface, offset_x=0, offset_y=0):
+        rx, ry = self.rect.x + offset_x, self.rect.y + offset_y
+        current_frame = self.frames['idle'][0]
+        current_frame = pygame.transform.flip(current_frame, True, False) 
+        surface.blit(current_frame, (rx, ry))
+        
+        pygame.draw.rect(surface, GRAY, (rx - 15, ry + 10, 18, 40), 0, 4)
+        pygame.draw.rect(surface, BLACK, (rx - 15, ry + 10, 18, 40), 1, 4)
+        for i in range(ry + 15, ry + 45, 8):
+            pygame.draw.line(surface, WHITE, (rx - 10, i), (rx - 2, i + 4), 2)
+        self.draw_hp_bar(surface, offset_x, offset_y)
+
+# ========================================================
+# HỆ THỐNG TRÙM CUỐI (ALONG CORE)
+# ========================================================
+class AlongCoreBoss:
+    def __init__(self):
+        self.rect = pygame.Rect(4400, HEIGHT - 290, 180, 250)
+        self.max_hp = 1050
+        self.hp = 1050
+        self.active = False 
+        
+        self.last_action_time = 0
+        self.action_cooldown = 2200
+        self.current_pattern = 0 
+        
+        self.laser_charging = False
+        self.laser_charge_start = 0
+        self.laser_active = False
+        self.laser_active_start = 0
+        self.laser_rect = pygame.Rect(0, 0, 0, 0)
+
+    def update(self, enemy_bullets_list, enemy_list):
+        if not self.active:
+            if player.rect.x > 3800:
+                self.active = True
+                pygame.mixer.music.stop() 
+            return
+            
+        if self.hp <= 0: return
+
+        current_time = pygame.time.get_ticks()
+        
+        if self.laser_charging:
+            if current_time - self.laser_charge_start > 1200: 
+                self.laser_charging = False
+                self.laser_active = True
+                self.laser_active_start = current_time
+                trigger_shake(30, 12)
+                if snd_bomb_exp: snd_bomb_exp.play()
+                self.laser_rect = pygame.Rect(camera_x, self.rect.y + 110, self.rect.x, 50)
+        
+        if self.laser_active:
+            if current_time - self.laser_active_start > 1000: 
+                self.laser_active = False
+            else:
+                if player.rect.colliderect(self.laser_rect):
+                    player.take_damage(8)
+
+        if current_time - self.last_action_time > self.action_cooldown:
+            if not self.laser_charging and not self.laser_active:
+                self.current_pattern = random.choice([0, 1, 2])
+                self.last_action_time = current_time
+                
+                if self.current_pattern == 0:
+                    for angle in [-4, -2, 0, 2, 4]:
+                        enemy_bullets_list.append(EnemyBullet(self.rect.left, self.rect.y + 60, speed_x=-10, speed_y=angle))
+                    if snd_shoot: snd_shoot.play()
+                    
+                elif self.current_pattern == 1:
+                    if len(enemy_list) < max_enemies_on_screen + 3:
+                        enemy_list.append(SuicideBomber(self.rect.left - 20, HEIGHT - 90))
+                        enemy_list.append(generate_new_enemy_at(self.rect.left - 60, allow_shield=False))
+                    if snd_bomb_drop: snd_bomb_drop.play()
+                    
+                elif self.current_pattern == 2:
+                    self.laser_charging = True
+                    self.laser_charge_start = current_time
+
+    def draw(self, surface, offset_x=0, offset_y=0):
+        bx, by = self.rect.x + offset_x, self.rect.y + offset_y
+        
+        pygame.draw.rect(surface, (40, 40, 45), (bx, by, 180, 250), 0, 15)
+        pygame.draw.rect(surface, GRAY, (bx, by, 180, 250), 4, 15)
+        
+        t = pygame.time.get_ticks() // 150
+        core_color = CYAN if (t % 2 == 0) else BLUE
+        if self.laser_charging: core_color = RED if (t % 2 == 0) else ORANGE
+        pygame.draw.rect(surface, core_color, (bx + 20, by + 30, 140, 60), 0, 8)
+        
+        pygame.draw.rect(surface, GRAY, (bx - 40, by + 110, 40, 50), 0, 4)
+        pygame.draw.rect(surface, BLACK, (bx - 40, by + 120, 15, 30))
+        
+        if self.laser_charging:
+            pygame.draw.circle(surface, RED, (bx - 40, by + 135), random.randint(10, 25))
+        if self.laser_active and self.hp > 0: # Chỉ vẽ tia laser khi boss còn sống
+            laser_screen_left = camera_x + offset_x
+            pygame.draw.rect(surface, CYAN, (laser_screen_left, by + 110, bx - laser_screen_left, 50))
+            pygame.draw.rect(surface, WHITE, (laser_screen_left, by + 120, bx - laser_screen_left, 30))
+
+        if self.active and self.hp > 0:
+            boss_bar_w, boss_bar_h = 400, 22
+            bbx, bby = WIDTH - 430, 110
+            surface.blit(GAME_FONT.render("ALONG CORE - BOSS CYBORG", True, WHITE), (bbx, bby - 25))
+            pygame.draw.rect(surface, RED, (bbx, bby, boss_bar_w, boss_bar_h))
+            pygame.draw.rect(surface, GREEN, (bbx, bby, int((self.hp / self.max_hp) * boss_bar_w), boss_bar_h))
+            pygame.draw.rect(surface, WHITE, (bbx, bby, boss_bar_w, boss_bar_h), 2)
+
+# ========================================================
+# HỆ THỐNG ĐIỀU PHỐI QUÁI MAP
+# ========================================================
+def generate_new_enemy_at(fixed_x, allow_shield=True):
+    r = random.random()
+    if r < 0.3 and allow_shield: return ShieldSniper(fixed_x, HEIGHT - 90)
+    elif r < 0.6: return SuicideBomber(fixed_x, HEIGHT - 90)
+    elif r < 0.8: return SniperEnemy(fixed_x, HEIGHT - 90)
+    return Enemy(fixed_x, HEIGHT - 90)
+
+def create_initial_map_enemies(amount):
+    enemy_list = []
+    for i in range(amount):
+        spawn_x = 600 + (i * random.randint(250, 450))
+        if spawn_x < 3700: 
+            enemy_list.append(generate_new_enemy_at(spawn_x))
+    return enemy_list
+
+def draw_hud(surface, player, boss_obj, game_cleared):
+    wp_name = {"NORMAL": "DAN THUONG", "M4A1": "M4A1 (SAY LIEN THANH)", "SHOTGUN": "SHOTGUN XUYEN GIAP"}
+    
+    score_str = f"DIEM (TIEN): {player.score:05d}   [MAP: {player.rect.x}/{MAP_WIDTH}]   [VU KHI: {wp_name[player.weapon]}]"
+    pygame.draw.rect(surface, BLACK, (15, 8, 750, 26))
+    surface.blit(GAME_FONT.render(score_str, True, WHITE), (20, 10))
+
+    BAR_X, BAR_Y, BAR_LENGTH, BAR_HEIGHT = 20, 40, 220, 20
+    pygame.draw.rect(surface, RED, (BAR_X, BAR_Y, BAR_LENGTH, BAR_HEIGHT)) 
+    pygame.draw.rect(surface, GREEN, (BAR_X, BAR_Y, int((player.hp / player.max_hp) * BAR_LENGTH), BAR_HEIGHT)) 
+    pygame.draw.rect(surface, WHITE, (BAR_X, BAR_Y, BAR_LENGTH, BAR_HEIGHT), 2) 
+    surface.blit(GAME_FONT.render(f"HP {player.hp}/{player.max_hp}", True, WHITE), (BAR_X + BAR_LENGTH + 10, BAR_Y + 2))
+
+    lives_str = f"REST: {player.lives}   BOMBS: {player.bombs_left}/30   [A/D]: DI CHUYEN CUON MAN . TIEN VE CUOI MAP GAP BOSS"
+    surface.blit(GAME_FONT.render(lives_str, True, YELLOW), (20, 70))
+    
+    # HIỂN THỊ MÀN HÌNH CHIẾN THẮNG KHI BOSS CHẾT
+    if game_cleared:
+        win_lbl = TITLE_FONT.render("MISSION ACCOMPLISHED!", True, GREEN)
+        sub_lbl = MENU_FONT.render("Nhan phim [ESC] hoac o cua so de thoat game", True, WHITE)
+        surface.blit(win_lbl, (WIDTH//2 - win_lbl.get_width()//2, HEIGHT//2 - 60))
+        surface.blit(sub_lbl, (WIDTH//2 - sub_lbl.get_width()//2, HEIGHT//2 + 30))
+
+# ========================================================
+# HỆ THỐNG MÀN HÌNH CHỌN MENU BAN ĐẦU
+# ========================================================
+def show_main_menu():
+    global current_difficulty, max_enemies_on_screen
+    menu_running, current_screen, selected_option = True, "MAIN", 0
+    main_options, diff_options = ["START GAME", "EXIT"], ["EASY (2 ENEMIES)", "NORMAL (5 ENEMIES)", "HARD (7 ENEMIES)", "CRAZY (10 ENEMIES)"]
+    main_rects = [pygame.Rect(WIDTH//2 - 170, HEIGHT//2 - 20, 340, 50), pygame.Rect(WIDTH//2 - 170, HEIGHT//2 + 50, 340, 50)]
+    diff_rects = [pygame.Rect(WIDTH//2 - 220, HEIGHT//2 - 60, 440, 45), pygame.Rect(WIDTH//2 - 220, HEIGHT//2 - 10, 440, 45), pygame.Rect(WIDTH//2 - 220, HEIGHT//2 + 40, 440, 45), pygame.Rect(WIDTH//2 - 220, HEIGHT//2 + 90, 440, 45)]
+
+    while menu_running:
+        mouse_pos = pygame.mouse.get_pos()
+        options = main_options if current_screen == "MAIN" else diff_options
+        btn_rects = main_rects if current_screen == "MAIN" else diff_rects
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: pygame.quit(); os._exit(0)
+            if event.type == pygame.KEYDOWN:
+                if event.key in [pygame.K_UP, pygame.K_w]: 
+                    selected_option = (selected_option - 1) % len(options)
+                    if snd_jump: snd_jump.play()
+                elif event.key in [pygame.K_DOWN, pygame.K_s]: 
+                    selected_option = (selected_option + 1) % len(options)
+                    if snd_jump: snd_jump.play()
+                elif event.key == pygame.K_ESCAPE and current_screen == "DIFFICULTY": current_screen = "MAIN"; selected_option = 0
+                elif event.key in [pygame.K_RETURN, pygame.K_SPACE]:
+                    if current_screen == "MAIN":
+                        if selected_option == 0: current_screen = "DIFFICULTY"; selected_option = 1
+                        else: pygame.quit(); os._exit(0)
+                    elif current_screen == "DIFFICULTY":
+                        mapping = {0: ("EASY", 2), 1: ("NORMAL", 5), 2: ("HARD", 7), 3: ("CRAZY", 10)}
+                        current_difficulty, max_enemies_on_screen = mapping[selected_option]
+                        menu_running = False
+                        
+        for idx, rect in enumerate(btn_rects):
+            if rect.collidepoint(mouse_pos): selected_option = idx
+
+        screen.blit(large_background_image, (-camera_x, 0))
+        screen.blit(large_ground_texture, (-camera_x, HEIGHT - 40))
+        title_main = TITLE_FONT.render("MINI CONTRA", True, RED)
+        screen.blit(title_main, (WIDTH // 2 - title_main.get_width() // 2, HEIGHT // 2 - 170))
+
+        if current_screen == "MAIN":
+            sub_text = GAME_FONT.render("[ FIX ERROR UPDATE ]", True, YELLOW)
+            screen.blit(sub_text, (WIDTH // 2 - sub_text.get_width() // 2, HEIGHT // 2 - 80))
+            for idx, option in enumerate(options):
+                color = YELLOW if idx == selected_option else WHITE
+                opt_text = MENU_FONT.render(option, True, color)
+                bx, by = btn_rects[idx].centerx - opt_text.get_width() // 2, btn_rects[idx].centery - opt_text.get_height() // 2
+                if idx == selected_option: screen.blit(MENU_FONT.render(">>", True, RED), (bx - 45, by))
+                screen.blit(opt_text, (bx, by))
+        elif current_screen == "DIFFICULTY":
+            screen.blit(GAME_FONT.render("SELECT DIFFICULTY MODE", True, WHITE), (WIDTH // 2 - 120, HEIGHT // 2 - 110))
+            diff_colors = [GREEN, YELLOW, ORANGE, PURPLE]
+            for idx, option in enumerate(options):
+                color = diff_colors[idx] if idx == selected_option else GRAY
+                opt_text = MENU_FONT.render(option, True, color)
+                bx, by = btn_rects[idx].centerx - opt_text.get_width() // 2, btn_rects[idx].centery - opt_text.get_height() // 2
+                if idx == selected_option: screen.blit(MENU_FONT.render(">", True, WHITE), (bx - 30, by))
+                screen.blit(opt_text, (bx, by))
+
+        pygame.display.flip()
+        clock.tick(60)
+
+# ========================================================
+# HỆ THỐNG CỬA HÀNG VŨ KHÍ (PHÍM B)
+# ========================================================
+def open_shop_menu(player):
+    shop_running = True
+    selected_item = 0
+    items = [
+        {"name": "Revival Potion (+50 HP)", "cost": 100, "desc": "Hoi phuc ngay 50 diem sinh luc"},
+        {"name": "M4A1 GUN (Automatic Rifle)", "cost": 300, "desc": "Giu chat SPACE de tu dong xa dan cuc nhanh"},
+        {"name": "Shotgun shell piercing armor", "cost": 500, "desc": "Ban chum 3 tia dan Xuyen qua tat ca muc tieu"}
+    ]
+    overlay = pygame.Surface((WIDTH, HEIGHT))
+    overlay.set_alpha(200)
+    overlay.fill(BLACK)
+
+    while shop_running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: pygame.quit(); os._exit(0)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_b or event.key == pygame.K_ESCAPE:
+                    shop_running = False 
+                elif event.key in [pygame.K_UP, pygame.K_w]:
+                    selected_item = (selected_item - 1) % len(items)
+                    if snd_jump: snd_jump.play()
+                elif event.key in [pygame.K_DOWN, pygame.K_s]:
+                    selected_item = (selected_item + 1) % len(items)
+                    if snd_jump: snd_jump.play()
+                elif event.key in [pygame.K_RETURN, pygame.K_SPACE]:
+                    item = items[selected_item]
+                    if player.score >= item["cost"]:
+                        player.score -= item["cost"] 
+                        if selected_item == 0: player.hp = min(player.max_hp, player.hp + 50)
+                        elif selected_item == 1: player.weapon = "M4A1"
+                        elif selected_item == 2: player.weapon = "SHOTGUN"
+                        if snd_bomb_exp: snd_bomb_exp.play() 
+                    else:
+                        if snd_player_hit: snd_player_hit.play() 
+
+        screen.blit(overlay, (0, 0))
+        shop_title = TITLE_FONT.render("WEAPONS STORE", True, YELLOW)
+        screen.blit(shop_title, (WIDTH//2 - shop_title.get_width()//2, 60))
+        
+        money_str = f"YOUR MONEY: {player.score} SCORE"
+        screen.blit(MENU_FONT.render(money_str, True, GREEN), (WIDTH//2 - 180, 160))
+
+        for idx, item in enumerate(items):
+            is_selected = (idx == selected_item)
+            text_color = CYAN if is_selected else WHITE
+            item_text = f"{item['name']} - Gia: {item['cost']} Diem"
+            item_render = MENU_FONT.render(item_text, True, text_color)
+            ix, iy = WIDTH//2 - 350, 240 + idx * 80
+            if is_selected:
+                pygame.draw.rect(screen, (30, 30, 30), (ix - 20, iy - 5, 750, 70), 0, 8)
+                pygame.draw.rect(screen, CYAN, (ix - 20, iy - 5, 750, 70), 2, 8)
+                screen.blit(MENU_FONT.render(">", True, CYAN), (ix - 45, iy))
+                desc_render = GAME_FONT.render(item["desc"], True, YELLOW)
+                screen.blit(desc_render, (ix, iy + 40))
+            screen.blit(item_render, (ix, iy))
+
+        help_shop = "ARROW KEYS TO SELECT . ENTER TO BUY . PRESS [B] OR [ESC] TO RETURN"
+        screen.blit(GAME_FONT.render(help_shop, True, GRAY), (WIDTH//2 - 380, HEIGHT - 80))
+        pygame.display.flip()
+        clock.tick(60)
+
+# Khởi chạy menu 
+show_main_menu()
+
+# ========================================================
+# KHỞI TẠO GAMEPLAY CHÍNH
+# ========================================================
+player = Player()
+boss = AlongCoreBoss()
+player_bullets, enemy_bullets, bombs, explosions, dust_particles = [], [], [], [], []
+enemies = create_initial_map_enemies(max_enemies_on_screen * 3)
+
+game_cleared = False # Biến cờ kiểm soát trạng thái phá đảo game
+running = True
+
+while running:
+    current_time = pygame.time.get_ticks()
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT: running = False
+        if event.type == pygame.KEYDOWN:
+            # Nếu đã phá đảo, cho phép nhấn ESC để thoát nhanh ra ngoài
+            if game_cleared and event.key == pygame.K_ESCAPE:
+                running = False
+                
+            if not game_cleared: # Chỉ cho phép nhận phím điều khiển khi chưa thắng
+                if event.key in [pygame.K_UP, pygame.K_w]: player.jump()
+                if event.key == pygame.K_SPACE and player.weapon != "M4A1":
+                    bullet_x = player.rect.right if player.facing_right else player.rect.left
+                    if player.weapon == "NORMAL":
+                        player_bullets.append(PlayerBullet(bullet_x, player.rect.y + 26, player.facing_right))
+                    elif player.weapon == "SHOTGUN":
+                        player_bullets.append(PlayerBullet(bullet_x, player.rect.y + 26, player.facing_right, angle_y=0, is_piercing=True))
+                        player_bullets.append(PlayerBullet(bullet_x, player.rect.y + 26, player.facing_right, angle_y=-3, is_piercing=True))
+                        player_bullets.append(PlayerBullet(bullet_x, player.rect.y + 26, player.facing_right, angle_y=3, is_piercing=True))
+                    if snd_shoot: snd_shoot.play()
+                if event.key == pygame.K_e and player.bombs_left > 0:
+                    bomb_x = player.rect.right if player.facing_right else player.rect.left
+                    bombs.append(Bomb(bomb_x, player.rect.y + 10, player.facing_right))
+                    player.bombs_left -= 1
+                    if snd_bomb_drop: snd_bomb_drop.play()
+                if event.key == pygame.K_b:
+                    open_shop_menu(player)
+
+    # NẾU GAME CHƯA KẾT THÚC -> TIẾN HÀNH XỬ LÝ LOGIC VẬT LÝ GAMEPLAY
+    if not game_cleared:
+        # Tự động quét kiểm tra xem HP Boss đã về 0 chưa để kích hoạt Phá Đảo
+        if boss.active and boss.hp <= 0:
+            game_cleared = True
+            pygame.mixer.music.stop() # Tắt nhạc nền khốc liệt
+            # Xóa sạch toàn bộ đạn và quái lính để sàn đấu yên bình
+            enemies.clear()
+            enemy_bullets.clear()
+            player_bullets.clear()
+            bombs.clear()
+            continue
+
+        # ĐẶC TÍNH SÚNG M4A1
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_SPACE] and player.weapon == "M4A1":
+            if current_time - player.last_m4a1_shot > 230: 
+                bullet_x = player.rect.right if player.facing_right else player.rect.left
+                player_bullets.append(PlayerBullet(bullet_x, player.rect.y + 26, player.facing_right))
+                if snd_shoot: snd_shoot.play()
+                player.last_m4a1_shot = current_time
+
+        player.move(keys, dust_particles, boss.active) 
+        player.apply_gravity(dust_particles) 
+
+        # VẬT LÝ CHẶN KHÔNG CHO ĐI XUYÊN QUA QUÁI CẦM KHIÊN
+        for enemy in enemies:
+            if enemy.type == "SHIELD":
+                shield_wall = pygame.Rect(enemy.rect.x - 15, enemy.rect.y, enemy.rect.width + 15, enemy.rect.height)
+                if player.rect.colliderect(shield_wall):
+                    if player.facing_right and player.rect.centerx < enemy.rect.left:
+                        player.rect.right = shield_wall.left
+                    elif not player.facing_right and player.rect.centerx > enemy.rect.right:
+                        player.rect.left = shield_wall.right
+
+        # CẬP NHẬT CAMERA CUỘN MÀN HÌNH
+        if not boss.active:
+            camera_x = player.rect.x - WIDTH // 3
+            if camera_x < 0: camera_x = 0
+            if camera_x > MAP_WIDTH - WIDTH: camera_x = MAP_WIDTH - WIDTH
+        else:
+            camera_x = MAP_WIDTH - WIDTH
+
+        # Cập nhật đạn ta
+        for bullet in player_bullets[:]:
+            bullet.update()
+            if bullet.rect.left > MAP_WIDTH or bullet.rect.right < 0 or bullet.rect.bottom < 0 or bullet.rect.top > HEIGHT:
+                player_bullets.remove(bullet)
+
+        # Cập nhật Bom nổ công phá diện rộng
+        for bomb in bombs[:]:
+            bomb.update(dust_particles)
+            if bomb.is_exploded:
+                explosions.append(Explosion(int(bomb.x), int(bomb.y), is_bomb_explosion=True))
+                if snd_bomb_exp: snd_bomb_exp.play()  
+                trigger_shake(15, 8)
+                
+                for enemy in enemies[:]:
+                    if abs(bomb.x - enemy.rect.centerx) < 140:  
+                        enemy.hp -= 3.5   
+                        if enemy.hp <= 0:
+                            explosions.append(Explosion(enemy.rect.centerx, enemy.rect.centery))
+                            if snd_explosion: snd_explosion.play()  
+                            if enemy in enemies: enemies.remove(enemy)
+                            player.score += 100
+                
+                if boss.active and boss.hp > 0:
+                    if abs(bomb.x - boss.rect.centerx) < 180:
+                        boss.hp -= 15
+                bombs.remove(bomb)
+
+        boss.update(enemy_bullets, enemies)
+        for enemy in enemies: enemy.update(enemy_bullets, player)
+
+        # Cập nhật đạn địch
+        for e_bullet in enemy_bullets[:]:
+            e_bullet.update()
+            if e_bullet.rect.right < 0 or e_bullet.rect.left > MAP_WIDTH: 
+                enemy_bullets.remove(e_bullet)
+
+        # VA CHẠM ĐẠN TA TRÚNG KẺ ĐỊCH / TRÚNG BOSS
+        for bullet in player_bullets[:]:
+            if boss.active and boss.hp > 0 and bullet.rect.colliderect(boss.rect):
+                if bullet in player_bullets: player_bullets.remove(bullet)
+                boss.hp -= 1.5 if player.weapon == "SHOTGUN" else 1.0
+                continue
+                
+            for enemy in enemies[:]:
+                if bullet.rect.colliderect(enemy.rect):
+                    if bullet.is_piercing:
+                        if enemy not in bullet.hit_enemies:
+                            bullet.hit_enemies.append(enemy)
+                            enemy.hp -= 1.5 
+                    else:
+                        if bullet in player_bullets: player_bullets.remove(bullet)
+                        enemy.hp -= 1
+                    
+                    if enemy.hp <= 0:
+                        explosions.append(Explosion(enemy.rect.centerx, enemy.rect.centery))
+                        if snd_explosion: snd_explosion.play()  
+                        if enemy in enemies: enemies.remove(enemy)
+                        player.score += 100
+
+        # VA CHẠM CẬN CHIẾN: QUÁI ÔM BOM TỰ NỔ
+        for enemy in enemies[:]:
+            if player.rect.colliderect(enemy.rect):
+                if enemy.type == "BOMBER":
+                    explosions.append(Explosion(enemy.rect.centerx, enemy.rect.centery, is_bomb_explosion=True))
+                    if snd_bomb_exp: snd_bomb_exp.play()
+                    trigger_shake(15, 8)
+                    player.take_damage(40) 
+                    if enemy in enemies: enemies.remove(enemy)
+                else:
+                    player.take_damage(5)
+
+        # Đạn địch bắn trúng người chơi
+        for e_bullet in enemy_bullets[:]:
+            if player.rect.colliderect(e_bullet.rect):
+                player.take_damage(e_bullet.damage)
+                if e_bullet in enemy_bullets: enemy_bullets.remove(e_bullet)
+
+        # Triệt tiêu đạn lẫn nhau
+        for p_bullet in player_bullets[:]:
+            for e_bullet in enemy_bullets[:]:
+                if p_bullet.rect.colliderect(e_bullet.rect):
+                    mid_x = (p_bullet.rect.x + e_bullet.rect.x) // 2
+                    mid_y = (p_bullet.rect.y + e_bullet.rect.y) // 2
+                    explosions.append(Explosion(mid_x, mid_y))
+                    if snd_explosion: snd_explosion.play()  
+                    if p_bullet in player_bullets: player_bullets.remove(p_bullet)
+                    if e_bullet in enemy_bullets: enemy_bullets.remove(e_bullet)
+
+        # Đạn địch dính vòng bom nổ sẽ biến mất
+        for e_bullet in enemy_bullets[:]:
+            for exp in explosions:
+                if exp.is_bomb_explosion:
+                    if ((e_bullet.rect.centerx - exp.x)**2 + (e_bullet.rect.centery - exp.y)**2)**0.5 <= exp.radius:
+                        if e_bullet in enemy_bullets: enemy_bullets.remove(e_bullet)
+                        break  
+
+        # Xử lý Hết HP / Hồi sinh / Game Over
+        if player.hp <= 0:
+            player.lives -= 1 
+            if player.lives > 0:
+                player.hp = 200
+                player.rect.x = camera_x + 50 
+                player.bombs_left = 30  
+                player.weapon = "NORMAL" 
+                player_bullets.clear(); enemy_bullets.clear(); bombs.clear(); explosions.clear(); dust_particles.clear()
+            else:
+                pygame.mixer.music.stop()
+                if snd_game_over: snd_game_over.play()
+                pygame.time.delay(10)  
+                print(f"GAME OVER! Tong so diem kiem duoc: {player.score}")
+                running = False 
+
+    # Cập nhật hiệu ứng vụ nổ và khói bụi (Vẫn chạy kể cả khi thắng để nhìn mượt mà)
+    for exp in explosions[:]:
+        exp.update()
+        if exp.is_dead: explosions.remove(exp)
+    for dust in dust_particles[:]:
+        dust.update()
+        if dust.is_dead: dust_particles.remove(dust)
+
+    # Rung màn hình
+    current_offset_x, current_offset_y = -camera_x, 0
+    if shake_duration > 0:
+        current_offset_x += random.randint(-shake_intensity, shake_intensity)
+        current_offset_y += random.randint(-shake_intensity, shake_intensity)
+        shake_duration -= 1 
+
+    # ========================================================
+    # RENDER ĐỒ HỌA
+    # ========================================================
+    screen.blit(large_background_image, (current_offset_x, current_offset_y))
+    screen.blit(large_ground_texture, (current_offset_x, HEIGHT - 40 + current_offset_y))
+    
+    for dust in dust_particles: dust.draw(screen, current_offset_x, current_offset_y)
+    player.draw(screen, current_offset_x, current_offset_y)
+    
+    for enemy in enemies: enemy.draw(screen, current_offset_x, current_offset_y)
+    boss.draw(screen, current_offset_x, current_offset_y)
+    
+    for bullet in player_bullets: bullet.draw(screen, current_offset_x, current_offset_y)
+    for bomb in bombs: bomb.draw(screen, current_offset_x, current_offset_y)
+    for e_bullet in enemy_bullets: e_bullet.draw(screen, current_offset_x, current_offset_y)
+    for exp in explosions: exp.draw(screen, current_offset_x, current_offset_y)
+    
+    # Giao diện tĩnh HUD đè lên trên cùng
+    draw_hud(screen, player, boss, game_cleared)
+    
+    pygame.display.flip()
+    clock.tick(60)
+
+pygame.quit()
+os._exit(0)
+
+
+
+
